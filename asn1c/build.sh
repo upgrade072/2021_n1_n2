@@ -20,7 +20,7 @@ autoreconf --force --install
 ./configure \
     --prefix=${ROOTDIR}/../build \
     --enable-static \
-	--enable-ASN_DEBUG
+    --enable-ASN_DEBUG
 
 make -j4
 make install

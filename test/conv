@@ -1,2 +1,0 @@
-#!/bin/bash -x
-./converter-example -iaper -pNGAP-PDU $1 -dd

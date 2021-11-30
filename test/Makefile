@@ -8,7 +8,7 @@ BUILD_LIBS = $(BUILD_LIBS_PATH)/libxml2.a \
 			 $(BUILD_LIBS_PATH)/libjson-c.a \
 			 $(BUILD_LIBS_PATH)/libxml2json2xml.a \
 			 $(BUILD_LIBS_PATH)/libasncodec.a \
-			 -lm -lz
+			 -lm 
 
 SRCS        = main.c
 
