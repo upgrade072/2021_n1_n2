@@ -5,114 +5,159 @@
 
 #include <NGAP-PDU.h>
 
-int main(int argc, char **argv)
+#define DBG	1
+
+char *file_to_buffer(char *filename, const char *mode, size_t *handle_size)
 {
-
-//	phase1) Read some bin file & convert to NGAP-PDU ASN
-
-	FILE *fp = NULL;
-	size_t file_size = 0;
-
-	/* open aper pdu file */
-	if (argc != 2) {
-		fprintf(stderr, "Usage %s <pdu.filename>\n", argv[0]);
-		exit(0);
-	} else {
-		if ((fp = fopen(argv[1], "rb")) == NULL) {
-			fprintf(stderr, "Fail to read filename=[%s]!\n", argv[1]);
-			exit(0);
-		}
-		/* read to pdu_payload_buffer */
-		fseek(fp, 0, SEEK_END); file_size = ftell(fp); rewind(fp);
-		fprintf(stderr, "Read processing [name:%s file_size:%ld]\n", argv[1], file_size);
+	FILE *fp = fopen(filename, mode);
+	if (fp == NULL) {
+		fprintf(stderr, "[%s] can't read file=[%s]!\n", __func__, filename);
+		return NULL;
 	}
-	/* create pdu buffer */
-	char *pdu_payload_buffer = malloc(file_size); fread(pdu_payload_buffer, 1, file_size,  fp); fclose(fp);
 
-	/* read NGAP-PDU payload asn */
+	fseek(fp, 0, SEEK_END);
+	size_t file_size = *handle_size = ftell(fp);
+	rewind(fp);
+
+	char *buffer = malloc(file_size);
+	fread(buffer, 1, file_size, fp);
+	fclose(fp);
+
+	return buffer; // Must be freed
+}
+
+int buffer_to_file(char *filename, const char *mode, char *buffer, size_t buffer_size, int free_buffer)
+{
+	/* write pdu to file */
+    FILE *fp = fopen(filename, mode);
+	int ret = fwrite(buffer, buffer_size, 1, fp);
+	fclose(fp);
+
+	if (free_buffer)
+		free(buffer);
+
+	return ret;
+}
+
+NGAP_PDU_t *decode_pdu_to_ngap_asn(enum asn_transfer_syntax syntax, char *pdu, size_t pdu_size, int free_pdu)
+{
     NGAP_PDU_t *pdu_payload_asn = NULL;
-    asn_dec_rval_t dc_res = asn_decode(0, ATS_ALIGNED_BASIC_PER, &asn_DEF_NGAP_PDU, (void **)&pdu_payload_asn, pdu_payload_buffer, file_size);
-	fprintf(stderr, "Read %s, handle=(%ld) bytes rcode=(%d)\n", dc_res.code == RC_OK ? "OK" : "NOK", dc_res.consumed, dc_res.code);
-    if (dc_res.code != RC_OK) {
-        exit(0);
+
+    asn_dec_rval_t dc_res = asn_decode(0, syntax, &asn_DEF_NGAP_PDU, (void **)&pdu_payload_asn, pdu, pdu_size);
+	fprintf(stderr, "[%s] Decode %s, bytes=(%ld) rcode=(%d)\n", __func__, dc_res.code == RC_OK ? "OK" : "NOK", dc_res.consumed, dc_res.code);
+
+	if (free_pdu)
+		free(pdu);
+
+	return dc_res.code != RC_OK ? NULL : pdu_payload_asn;
+}
+
+int check_asn_constraints(asn_TYPE_descriptor_t type_desc, const void *sptr, int debug)
+{
+    char errbuf[128] = {0,}; 
+	size_t errlen = sizeof(errbuf);
+
+    int ret = asn_check_constraints(&type_desc, sptr, errbuf, &errlen);
+	fprintf(stderr, "[%s] Check Constraint for %s, Result: %s Err=(%s)\n", __func__, type_desc.name, ret ? "NOK" : "OK", errbuf);
+
+	if (debug) {
+		asn_fprint(stdout, &type_desc, sptr);
+		xer_fprint(stdout, &type_desc, sptr);
 	}
-	/* we don't need any more*/
-	free(pdu_payload_buffer);
 
-	/* check Constraint */
-    char errbuf[128] = {0,}; size_t errlen = sizeof(errbuf);
-    int ret = asn_check_constraints(&asn_DEF_NGAP_PDU, pdu_payload_asn, errbuf, &errlen);
-	fprintf(stderr, "Check Constraint for %s, Result: %s Err=(%s)\n", asn_DEF_NGAP_PDU.name, ret ? "NOK" : "OK", errbuf);
+	return ret;
+}
 
-	/* sample print */
-	asn_fprint(stdout, &asn_DEF_NGAP_PDU, pdu_payload_asn);
-	xer_fprint(stdout, &asn_DEF_NGAP_PDU, pdu_payload_asn);
+char *encode_asn_to_pdu_buffer(enum asn_transfer_syntax syntax, asn_TYPE_descriptor_t type_desc, void *sptr, size_t *encode_size, int free_asn)
+{
+	asn_encode_to_new_buffer_result_t encode_res = asn_encode_to_new_buffer(0, syntax, &type_desc, sptr);
+	fprintf(stderr, "[%s] Encode %s, bytes=(%ld)\n", __func__, encode_res.buffer == NULL ? "NOK" : "OK", encode_res.result.encoded);
 
-// phase2) convert to XML string
+	if (free_asn)
+		ASN_STRUCT_FREE(type_desc, sptr);
 
-	/* encode from ASN to XML : canonical mean no white space */
-	asn_encode_to_new_buffer_result_t ec_xml = asn_encode_to_new_buffer(0, ATS_CANONICAL_XER, &asn_DEF_NGAP_PDU, pdu_payload_asn);
-	fprintf(stderr, "Encode to XML Result: %s, Encoded=(%ld)\n", ec_xml.buffer == NULL ? "NOK" : "OK", ec_xml.result.encoded);
-	if (ec_xml.buffer == NULL) {
-		exit(0);
-	}
-	/* we dont need pdu_payload_asn anymore */
-    ASN_STRUCT_FREE(asn_DEF_NGAP_PDU, pdu_payload_asn);
+	*encode_size = encode_res.result.encoded;
 
-// phase3) convert to JSON string 
+	return encode_res.buffer == NULL ? NULL : encode_res.buffer;
+}
 
-	/* encode from XML to JSON */
+json_object *convert_xml_to_jobj(char *xml_string, size_t xml_size, int free_xml)
+{
 	json_object *jobj = json_object_new_object();
-	xmlDoc *xml_doc = xmlReadMemory(ec_xml.buffer, ec_xml.result.encoded, NULL, NULL, 0);
-	free(ec_xml.buffer);
+
+	xmlDoc *xml_doc = xmlReadMemory(xml_string, xml_size, NULL, NULL, 0);
 	xmlNode *xml_node = xmlDocGetRootElement(xml_doc);
 	xml2json_convert_elements(xml_node, jobj);
+
+	xmlFreeDoc(xml_doc); // free include xmlNode
+
 	fprintf(stderr, "%s\n", JSON_PRINT(jobj));
-	/* we don't need any more */
-	xmlFreeDoc(xml_doc);
+	
+	if (free_xml)
+		free(xml_string);
 
-	/* find NGAP-PDU & create to XML */
-	json_object *jobj_ngap_pdu = json_object_object_get(jobj, "NGAP-PDU");
-	xmlNode *new_xml = xmlNewNode(NULL, (xmlChar *)"NGAP-PDU");
-	json2xml_convert_object(jobj_ngap_pdu, new_xml, json_type_object, NULL);
-	xmlBuffer *new_buffer = xmlBufferCreate();
-	int new_size = xmlNodeDump(new_buffer, NULL, new_xml, 0, 0);
-	fprintf(stderr, "%s\n", new_buffer->content);
-	/* we dont need any more */
-	json_object_put(jobj);
+	return jobj;
+}
 
-    NGAP_PDU_t *new_pdu_payload_asn = NULL;
-    dc_res = asn_decode(0, ATS_CANONICAL_XER, &asn_DEF_NGAP_PDU, (void **)&new_pdu_payload_asn, new_buffer->content, new_size); /* PDU == alsigned packet encoded file */
-	fprintf(stderr, "Read %s, handle=(%ld) bytes rcode=(%d)\n", dc_res.code == RC_OK ? "OK" : "NOK", dc_res.consumed, dc_res.code);
-    if (dc_res.code != RC_OK) {
-        exit(0);
-	}
-	/* we dont need any more */
-	xmlFreeNode(new_xml);
-	xmlBufferFree(new_buffer);
+xmlBuffer *convert_json_to_xml(json_object *jobj, const char *pdu_name, size_t *encoded_size, int free_jobj)
+{
+    /* find NGAP-PDU & create to XML */
+    json_object *jobj_ngap_pdu = json_object_object_get(jobj, pdu_name);
+    xmlNode *xml_node = xmlNewNode(NULL, (xmlChar *)pdu_name);
+    json2xml_convert_object(jobj_ngap_pdu, xml_node, json_type_object, NULL);
+    xmlBuffer *xml_buffer = xmlBufferCreate();
+    int xml_size = xmlNodeDump(xml_buffer, NULL, xml_node, 0, 0);
 
-	/* sample print */
-	asn_fprint(stdout, &asn_DEF_NGAP_PDU, new_pdu_payload_asn);
-	xer_fprint(stdout, &asn_DEF_NGAP_PDU, new_pdu_payload_asn);
+	xmlFreeNode(xml_node);
 
-// phase4 convert to APER PDU
-    ret = asn_check_constraints(&asn_DEF_NGAP_PDU, new_pdu_payload_asn, errbuf, &errlen);
-	fprintf(stderr, "Check Constraint for %s, Result: %s Err=(%s)\n", asn_DEF_NGAP_PDU.name, ret ? "NOK" : "OK", errbuf);
+	if (free_jobj)
+		json_object_put(jobj);
 
-	/* encode from XML to APER */
-	asn_encode_to_new_buffer_result_t ec_aper = asn_encode_to_new_buffer(0, ATS_ALIGNED_BASIC_PER, &asn_DEF_NGAP_PDU, new_pdu_payload_asn);
-	fprintf(stderr, "Encode to APER Result: %s, Encoded=(%ld)\n", ec_aper.buffer == NULL ? "NOK" : "OK", ec_aper.result.encoded);
-	if (ec_aper.buffer == NULL) {
+	*encoded_size = xml_size;
+
+	return xml_buffer;
+}
+
+int main(int argc, char **argv)
+{
+	if (argc != 2) {
+		fprintf(stderr, "Usage %s <filename>\n", argv[0]);
 		exit(0);
 	}
-	/* we dont need pdu_payload_asn anymore */
-    ASN_STRUCT_FREE(asn_DEF_NGAP_PDU, new_pdu_payload_asn);
 
-    FILE *new_fp = fopen("./result.bin", "wb");
-	fwrite(ec_aper.buffer, ec_aper.result.encoded, 1, new_fp);
-	free(ec_aper.buffer);
-	fclose(new_fp);
+	/* load pdu from file */
+	size_t pdu_size = 0;
+	char *pdu_payload = file_to_buffer(argv[1], "rb", &pdu_size);
 
+	/* create NGAP-PDU asn_ctx from APER */
+    NGAP_PDU_t *pdu_payload_asn = decode_pdu_to_ngap_asn(ATS_ALIGNED_BASIC_PER, pdu_payload, pdu_size, 1);
+	check_asn_constraints(asn_DEF_NGAP_PDU, pdu_payload_asn, DBG);
+
+	/* encode XML from ASN */
+	size_t xml_size = 0;
+	char *xml_string = encode_asn_to_pdu_buffer(ATS_CANONICAL_XER, asn_DEF_NGAP_PDU, pdu_payload_asn, &xml_size, 1);
+
+	/* xml to json convert */
+	json_object *jobj = convert_xml_to_jobj(xml_string, xml_size, 1);
+
+	/* json to xml convert */
+	size_t xmlb_size = 0;
+	xmlBuffer *xmlb = convert_json_to_xml(jobj, "NGAP-PDU", &xmlb_size, 1);
+
+	/* create NGAP-PDU asn_ctx from XER */
+    NGAP_PDU_t *new_pdu_payload_asn = decode_pdu_to_ngap_asn(ATS_CANONICAL_XER, (char *)xmlb->content, xmlb_size, 0);
+	xmlBufferFree(xmlb); // free xml manually
+	check_asn_constraints(asn_DEF_NGAP_PDU, new_pdu_payload_asn, DBG);
+
+	/* encode APER from ASN */
+	size_t aper_size = 0;
+	char *aper_string = encode_asn_to_pdu_buffer(ATS_ALIGNED_BASIC_PER, asn_DEF_NGAP_PDU, new_pdu_payload_asn, &aper_size, 1);
+
+	/* save pdu to file */
+	buffer_to_file("./result.bin", "wb", aper_string, aper_size, 1);
+
+	/* cleanup */
 	xmlCleanupParser();
+
     return 1;
 }
