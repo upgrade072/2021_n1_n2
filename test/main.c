@@ -5,7 +5,7 @@
 
 #include <NGAP-PDU.h>
 
-#define DBG	1
+#define DBG	0
 
 char *file_to_buffer(char *filename, const char *mode, size_t *handle_size)
 {
@@ -45,6 +45,9 @@ NGAP_PDU_t *decode_pdu_to_ngap_asn(enum asn_transfer_syntax syntax, char *pdu, s
 
     asn_dec_rval_t dc_res = asn_decode(0, syntax, &asn_DEF_NGAP_PDU, (void **)&pdu_payload_asn, pdu, pdu_size);
 	fprintf(stderr, "[%s] Decode %s, bytes=(%ld) rcode=(%d)\n", __func__, dc_res.code == RC_OK ? "OK" : "NOK", dc_res.consumed, dc_res.code);
+
+	if (dc_res.code != RC_OK)
+		ASN_STRUCT_FREE(asn_DEF_NGAP_PDU, pdu_payload_asn);
 
 	if (free_pdu)
 		free(pdu);
