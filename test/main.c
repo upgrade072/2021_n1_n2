@@ -84,13 +84,13 @@ char *encode_asn_to_pdu_buffer(enum asn_transfer_syntax syntax, asn_TYPE_descrip
 	return encode_res.buffer == NULL ? NULL : encode_res.buffer;
 }
 
-json_object *convert_xml_to_jobj(char *xml_string, size_t xml_size, int free_xml)
+json_object *convert_xml_to_jobj(char *xml_string, size_t xml_size, asn_TYPE_descriptor_t asn_td, int free_xml)
 {
 	json_object *jobj = json_object_new_object();
 
 	xmlDoc *xml_doc = xmlReadMemory(xml_string, xml_size, NULL, NULL, 0);
 	xmlNode *xml_node = xmlDocGetRootElement(xml_doc);
-	xml2json_convert_elements(xml_node, jobj);
+	xml2json_convert_elements(xml_node, jobj, &asn_td);
 
 	xmlFreeDoc(xml_doc); // free include xmlNode
 
@@ -141,7 +141,7 @@ int main(int argc, char **argv)
 	char *xml_string = encode_asn_to_pdu_buffer(ATS_CANONICAL_XER, asn_DEF_NGAP_PDU, pdu_payload_asn, &xml_size, 1);
 
 	/* xml to json convert */
-	json_object *jobj = convert_xml_to_jobj(xml_string, xml_size, 1);
+	json_object *jobj = convert_xml_to_jobj(xml_string, xml_size, asn_DEF_NGAP_PDU, 1);
 
 	/* json to xml convert */
 	size_t xmlb_size = 0;

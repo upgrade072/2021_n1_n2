@@ -177,7 +177,8 @@ ProtocolExtensionContainer {NGAP-PROTOCOL-EXTENSION : ExtensionSetParam} ::=
 ProtocolExtensionField {NGAP-PROTOCOL-EXTENSION : ExtensionSetParam} ::= SEQUENCE {
 	id					NGAP-PROTOCOL-EXTENSION.&id				({ExtensionSetParam}),
 	criticality			NGAP-PROTOCOL-EXTENSION.&criticality	({ExtensionSetParam}{@id}),
-	extensionValue		NGAP-PROTOCOL-EXTENSION.&Extension		({ExtensionSetParam}{@id})
+	--extensionValue		NGAP-PROTOCOL-EXTENSION.&Extension		({ExtensionSetParam}{@id})
+	extensionValue		OCTET STRING
 }
 
 -- **************************************************************

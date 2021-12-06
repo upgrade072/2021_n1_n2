@@ -12,7 +12,7 @@ void attach_xml_obj(json_object *jobj, xmlNode *cur, int parent_type, const char
 	} else if (json_type == json_type_double) {
 		sprintf(cnvt_buf, "%lf", json_object_get_double(jobj));
 	} else if (json_type == json_type_int) {
-		sprintf(cnvt_buf, "%d", json_object_get_int(jobj));
+		sprintf(cnvt_buf, "%ld", json_object_get_int64(jobj));
 	} else if (json_type ==  json_type_string) {
 		str = json_object_get_string(jobj);
 	}

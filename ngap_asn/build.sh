@@ -20,11 +20,12 @@ mkdir code
     -fcompound-names \
     -fno-include-deps \
     -findirect-choice \
-	-fwide-types \
 	-gen-autotools \
 	-gen-APER \
     -D code \
     ../ASN_FILES/*.asn
+
+#-fwide-types \
 
 autoreconf --force --install
 
